@@ -1,0 +1,6 @@
+{
+  "name": "Verba Nova II",
+  "description": "EPUB, XHTML, and manuscript translation suite for archaic Latin, Greek, and French literature to modern English while preserving HTML/CSS formatting, author voice, and word count statistics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
