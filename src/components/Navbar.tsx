@@ -18,15 +18,16 @@ import {
   RotateCcw,
   HardDrive,
   Mail,
-  Trash2
+  Trash2,
+  Crown
 } from 'lucide-react';
 import { EbookProject } from '../types';
 import { parseEpubFile, sanitizeXhtmlForPreview, countWordsFromXhtml } from '../utils/epubParser';
 import { parsePdfFile } from '../utils/pdfParser';
 
 interface NavbarProps {
-  activeTab: 'editor' | 'library' | 'ocr' | 'analytics' | 'annotations';
-  setActiveTab: (tab: 'editor' | 'library' | 'ocr' | 'analytics' | 'annotations') => void;
+  activeTab: 'editor' | 'library' | 'ocr' | 'analytics' | 'annotations' | 'mancala';
+  setActiveTab: (tab: 'editor' | 'library' | 'ocr' | 'analytics' | 'annotations' | 'mancala') => void;
   project: EbookProject;
   setProject: React.Dispatch<React.SetStateAction<EbookProject>>;
   onOpenExportModal: () => void;
@@ -356,6 +357,19 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <BookMarked className="w-3.5 h-3.5 text-[#4a90e2]" />
             <span>Annotations & Footnotes</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('mancala')}
+            id="nav-tab-mancala"
+            className={`flex items-center space-x-1.5 px-3 py-1 rounded text-xs font-medium transition whitespace-nowrap ${
+              activeTab === 'mancala'
+                ? 'bg-[#282828] text-[#d4af37] border-b-2 border-[#d4af37] font-semibold'
+                : 'text-[#aaa] hover:text-white hover:bg-[#222]'
+            }`}
+          >
+            <Crown className="w-3.5 h-3.5 text-[#d4af37]" />
+            <span>Mancala Solver</span>
           </button>
 
           {/* Session Restore Point Status Widget */}
