@@ -20,7 +20,6 @@ import {
   isGameOver,
   legalMoves,
   pitLetter,
-  sideRange,
   totalStones,
   STANDARD_TOTAL_STONES,
 } from '../mancala/engine';
@@ -140,13 +139,17 @@ export const MancalaSolver: React.FC = () => {
     setState((s) => {
       const pits = s.pits.slice();
       pits[idx] = v;
-      return { ...s, pits, isOpeningPosition: false };
+      return { ...s, pits, isFirstMove: false, restrictedPit: null };
     });
   };
 
   const editStore = (side: 'T' | 'O', value: number) => {
     const v = Math.max(0, Math.floor(Number.isFinite(value) ? value : 0));
-    setState((s) => (side === 'T' ? { ...s, storeT: v, isOpeningPosition: false } : { ...s, storeO: v, isOpeningPosition: false }));
+    setState((s) =>
+      side === 'T'
+        ? { ...s, storeT: v, isFirstMove: false, restrictedPit: null }
+        : { ...s, storeO: v, isFirstMove: false, restrictedPit: null }
+    );
   };
 
   const finishEditing = () => {
@@ -160,11 +163,7 @@ export const MancalaSolver: React.FC = () => {
   const bestMove = solveResult?.bestMove ?? null;
   const bestPit = bestMove?.pit;
   const currentLegalMoves = !editMode && !gameOver ? legalMoves(state) : [];
-  const openingForbiddenPits = useMemo(() => {
-    if (editMode || gameOver || !state.isOpeningPosition) return new Set<number>();
-    const [start] = sideRange(state.turn);
-    return new Set([start + 2, start + 5]);
-  }, [editMode, gameOver, state.isOpeningPosition, state.turn]);
+  const openingRestrictedPit = !editMode && !gameOver ? state.restrictedPit : null;
 
   const winnerText = useMemo(() => {
     if (!gameOver) return null;
@@ -188,9 +187,9 @@ export const MancalaSolver: React.FC = () => {
             or otherwise the strongest available move.
           </p>
           <p className="text-[11px] text-[#888]/80 mt-1 max-w-xl">
-            House rule: on a fresh board, the starting player may not open with their{' '}
-            <span className="text-[#e0e0e0] font-semibold">c</span> or{' '}
-            <span className="text-[#e0e0e0] font-semibold">f</span> pit.
+            House rule: <span className="text-[#e0e0e0] font-semibold">c</span> and{' '}
+            <span className="text-[#e0e0e0] font-semibold">f</span> are each fine as the opening
+            move on their own — opening with c just can't be immediately followed by f.
           </p>
         </div>
 
@@ -241,7 +240,7 @@ export const MancalaSolver: React.FC = () => {
                   value={state.pits[idx]}
                   editable={editMode}
                   playable={currentLegalMoves.includes(idx)}
-                  openingForbidden={openingForbiddenPits.has(idx)}
+                  openingForbidden={openingRestrictedPit === idx}
                   highlighted={!editMode && bestPit === idx}
                   labelPosition="above"
                   onChange={(v) => editPit(idx, v)}
@@ -257,7 +256,7 @@ export const MancalaSolver: React.FC = () => {
                   value={state.pits[idx]}
                   editable={editMode}
                   playable={currentLegalMoves.includes(idx)}
-                  openingForbidden={openingForbiddenPits.has(idx)}
+                  openingForbidden={openingRestrictedPit === idx}
                   highlighted={!editMode && bestPit === idx}
                   labelPosition="below"
                   onChange={(v) => editPit(idx, v)}
@@ -425,7 +424,7 @@ const Pit: React.FC<{
           ? 'bg-emerald-400 text-black border-emerald-200 shadow-[0_0_0_3px_rgba(74,222,128,0.4)]'
           : 'bg-[#e6c98a] text-[#3a2a17] border-[#8a6a3a]'
       } ${playable ? 'cursor-pointer hover:brightness-110 hover:scale-[1.04]' : 'cursor-default opacity-90'}`}
-      title={playable ? 'Play this pit' : openingForbidden ? 'Opening move: the c and f pits cannot open the game' : undefined}
+      title={playable ? 'Play this pit' : openingForbidden ? "Opening rule: c can't be immediately followed by f" : undefined}
     >
       {value}
       {highlighted && (

@@ -11,11 +11,16 @@ export interface MancalaState {
   storeT: number;
   storeO: number;
   turn: Side;
-  // True only for a pristine, never-played starting position. The mover's
-  // "c" and "f" pits (3rd and 6th) are disallowed as an opening move; this
-  // flag is cleared the instant any move is played or the board is edited,
-  // so the restriction never applies once a game is actually underway.
-  isOpeningPosition: boolean;
+  // True only for a pristine, never-played starting position. Used solely to
+  // detect whether the very first move of the game was the "c" pit, which
+  // triggers restrictedPit below. Cleared the instant any move is played or
+  // the board is edited.
+  isFirstMove: boolean;
+  // If set, this exact pit index cannot be played on the immediate next
+  // move. The only way this gets set is opening the game with the "c" pit
+  // (which forbids following it with "f" on the same side); it's cleared
+  // again as soon as that next move is played, whatever it was.
+  restrictedPit: number | null;
 }
 
 export const PITS_PER_SIDE = 6;
@@ -28,7 +33,8 @@ export function createInitialState(firstTurn: Side = 'TERRANOVA'): MancalaState 
     storeT: 0,
     storeO: 0,
     turn: firstTurn,
-    isOpeningPosition: true,
+    isFirstMove: true,
+    restrictedPit: null,
   };
 }
 
@@ -38,7 +44,8 @@ export function cloneState(state: MancalaState): MancalaState {
     storeT: state.storeT,
     storeO: state.storeO,
     turn: state.turn,
-    isOpeningPosition: state.isOpeningPosition,
+    isFirstMove: state.isFirstMove,
+    restrictedPit: state.restrictedPit,
   };
 }
 
@@ -67,12 +74,9 @@ export function pitLabel(idx: number): string {
 
 export function legalMoves(state: MancalaState): number[] {
   const [start, end] = sideRange(state.turn);
-  // Opening-move restriction: the starting player may not open with their
-  // "c" (3rd) or "f" (6th) pit.
-  const forbidden = state.isOpeningPosition ? new Set([start + 2, start + 5]) : null;
   const moves: number[] = [];
   for (let i = start; i <= end; i++) {
-    if (state.pits[i] > 0 && !(forbidden && forbidden.has(i))) moves.push(i);
+    if (state.pits[i] > 0 && i !== state.restrictedPit) moves.push(i);
   }
   return moves;
 }
@@ -163,8 +167,18 @@ export function applyMove(state: MancalaState, pitIndex: number): MoveResult {
       ? player
       : player === 'TERRANOVA' ? 'OPPONENT' : 'TERRANOVA';
 
+  // Opening rule: c may not be immediately followed by f (on the same side).
+  // c and f are each individually fine as the opening move otherwise.
+  let nextRestrictedPit: number | null = null;
+  if (state.isFirstMove) {
+    const [openerStart] = sideRange(player);
+    if (pitIndex - openerStart === 2) {
+      nextRestrictedPit = openerStart + 5;
+    }
+  }
+
   return {
-    state: { pits, storeT, storeO, turn: nextTurn, isOpeningPosition: false },
+    state: { pits, storeT, storeO, turn: nextTurn, isFirstMove: false, restrictedPit: nextRestrictedPit },
     extraTurn,
     captured,
     gameOver,
