@@ -30,8 +30,25 @@ import { ContactDirectoryModal } from './components/ContactDirectoryModal';
 import { MancalaSolver } from './components/MancalaSolver';
 import { HardDrive, RotateCcw, X, Check, Save, Mail, Globe, ExternalLink, Smartphone, Wrench, PenTool, Accessibility, BookOpen } from 'lucide-react';
 
+type TabId = 'editor' | 'library' | 'ocr' | 'analytics' | 'annotations' | 'mancala';
+
+// Deep-link paths that map directly to a tab (e.g. verbanovae.com/mancolver).
+const PATH_TO_TAB: Record<string, TabId> = {
+  '/mancolver': 'mancala',
+  '/mancala': 'mancala',
+  '/mancala-solver': 'mancala',
+};
+const TAB_TO_PATH: Partial<Record<TabId, string>> = {
+  mancala: '/mancolver',
+};
+
+function tabFromPath(pathname: string): TabId | undefined {
+  const path = pathname.replace(/\/+$/, '') || '/';
+  return PATH_TO_TAB[path];
+}
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'editor' | 'library' | 'ocr' | 'analytics' | 'annotations' | 'mancala'>('editor');
+  const [activeTab, setActiveTab] = useState<TabId>(() => tabFromPath(window.location.pathname) ?? 'editor');
   const [project, setProject] = useState<EbookProject>(INITIAL_PROJECT);
   
   const [showContactModal, setShowContactModal] = useState<boolean>(false);
@@ -115,7 +132,8 @@ export default function App() {
     if (points.length > 0) {
       const latest = points[0];
       setProject(latest.project);
-      if (latest.activeTab) setActiveTab(latest.activeTab);
+      // A direct link (e.g. /mancolver) always wins over the restored session tab.
+      if (latest.activeTab && !tabFromPath(window.location.pathname)) setActiveTab(latest.activeTab);
       if (latest.currentOptions) setCurrentOptions(latest.currentOptions);
       if (latest.batchSummary) setBatchSummary(latest.batchSummary);
 
@@ -127,6 +145,23 @@ export default function App() {
       const initialPoints = pushBackupPoint(INITIAL_PROJECT, 'editor', 'Initial Classical Book Loaded', true);
       setBackupPoints(initialPoints);
     }
+  }, []);
+
+  // Keep the URL in sync with the active tab (e.g. /mancolver for the Mancala
+  // Solver) so it's directly linkable/bookmarkable, and update the tab when
+  // the user navigates with the browser's back/forward buttons.
+  useEffect(() => {
+    const path = TAB_TO_PATH[activeTab] ?? '/';
+    if (window.location.pathname !== path) {
+      window.history.pushState(null, '', path);
+    }
+    document.title = activeTab === 'mancala' ? 'Mancala Solver — Verba Nova II' : 'Verba Nova II';
+  }, [activeTab]);
+
+  useEffect(() => {
+    const onPopState = () => setActiveTab(tabFromPath(window.location.pathname) ?? 'editor');
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
   // Auto-save into rolling 5 backup points cache whenever project, activeTab, or currentOptions change (debounced 1.5s)
