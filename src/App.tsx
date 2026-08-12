@@ -27,10 +27,11 @@ import {
 } from './utils/sessionCache';
 import { RestoreBackupModal } from './components/RestoreBackupModal';
 import { ContactDirectoryModal } from './components/ContactDirectoryModal';
+import { MancalaSolver } from './components/MancalaSolver';
 import { HardDrive, RotateCcw, X, Check, Save, Mail, Globe, ExternalLink, Smartphone, Wrench, PenTool, Accessibility, BookOpen } from 'lucide-react';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'editor' | 'library' | 'ocr' | 'analytics' | 'annotations'>('editor');
+  const [activeTab, setActiveTab] = useState<'editor' | 'library' | 'ocr' | 'analytics' | 'annotations' | 'mancala'>('editor');
   const [project, setProject] = useState<EbookProject>(INITIAL_PROJECT);
   
   const [showContactModal, setShowContactModal] = useState<boolean>(false);
@@ -782,11 +783,13 @@ export default function App() {
         )}
 
         {activeTab === 'annotations' && (
-          <AnnotationsView 
-            project={project} 
-            setProject={setProject} 
+          <AnnotationsView
+            project={project}
+            setProject={setProject}
           />
         )}
+
+        {activeTab === 'mancala' && <MancalaSolver />}
       </main>
 
       {/* Batch Translation Summary Report Modal */}

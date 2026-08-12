@@ -8,7 +8,7 @@ export interface BackupPoint {
   label: string;
   savedAt: string; // ISO string
   project: EbookProject;
-  activeTab: 'editor' | 'library' | 'ocr' | 'analytics' | 'annotations';
+  activeTab: 'editor' | 'library' | 'ocr' | 'analytics' | 'annotations' | 'mancala';
   currentOptions?: TranslationOptions;
   batchSummary?: BatchTranslationSummary | null;
   chapterCount: number;
@@ -282,7 +282,7 @@ export function getBackupPoints(): BackupPoint[] {
  */
 export function pushBackupPoint(
   project: EbookProject,
-  activeTab: 'editor' | 'library' | 'ocr' | 'analytics' | 'annotations',
+  activeTab: 'editor' | 'library' | 'ocr' | 'analytics' | 'annotations' | 'mancala',
   label: string = 'Checkpoint',
   isAutoSave: boolean = false,
   currentOptions?: TranslationOptions,

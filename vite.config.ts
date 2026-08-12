@@ -2,10 +2,46 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig} from 'vite';
+import {VitePWA} from 'vite-plugin-pwa';
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      VitePWA({
+        registerType: 'autoUpdate',
+        includeAssets: ['apple-touch-icon.png'],
+        manifest: {
+          name: 'Verba Nova II',
+          short_name: 'Verba Nova II',
+          description: 'Ebook translation suite with built-in Mancala solver.',
+          start_url: '/',
+          scope: '/',
+          display: 'standalone',
+          background_color: '#111111',
+          theme_color: '#111111',
+          icons: [
+            { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+            { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+            { src: '/icon-maskable-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+            { src: '/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          ],
+        },
+        workbox: {
+          // App-shell only: HTML/JS/CSS are cached for fast repeat loads and
+          // offline navigation, but /api/* calls always hit the network since
+          // translation results depend on live server state.
+          navigateFallbackDenylist: [/^\/api\//],
+          runtimeCaching: [
+            {
+              urlPattern: /^\/api\//,
+              handler: 'NetworkOnly',
+            },
+          ],
+        },
+      }),
+    ],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
