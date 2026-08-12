@@ -11,6 +11,11 @@ export interface MancalaState {
   storeT: number;
   storeO: number;
   turn: Side;
+  // True only for a pristine, never-played starting position. The mover's
+  // "c" and "f" pits (3rd and 6th) are disallowed as an opening move; this
+  // flag is cleared the instant any move is played or the board is edited,
+  // so the restriction never applies once a game is actually underway.
+  isOpeningPosition: boolean;
 }
 
 export const PITS_PER_SIDE = 6;
@@ -23,11 +28,24 @@ export function createInitialState(firstTurn: Side = 'TERRANOVA'): MancalaState 
     storeT: 0,
     storeO: 0,
     turn: firstTurn,
+    isOpeningPosition: true,
   };
 }
 
 export function cloneState(state: MancalaState): MancalaState {
-  return { pits: state.pits.slice(), storeT: state.storeT, storeO: state.storeO, turn: state.turn };
+  return {
+    pits: state.pits.slice(),
+    storeT: state.storeT,
+    storeO: state.storeO,
+    turn: state.turn,
+    isOpeningPosition: state.isOpeningPosition,
+  };
+}
+
+// Pit letter label (a-f) within its own side, e.g. T3 -> "c", O6 -> "f".
+export function pitLetter(idx: number): string {
+  const posInSide = idx <= 5 ? idx : idx - 6;
+  return String.fromCharCode(97 + posInSide);
 }
 
 export function totalStones(state: MancalaState): number {
@@ -49,9 +67,12 @@ export function pitLabel(idx: number): string {
 
 export function legalMoves(state: MancalaState): number[] {
   const [start, end] = sideRange(state.turn);
+  // Opening-move restriction: the starting player may not open with their
+  // "c" (3rd) or "f" (6th) pit.
+  const forbidden = state.isOpeningPosition ? new Set([start + 2, start + 5]) : null;
   const moves: number[] = [];
   for (let i = start; i <= end; i++) {
-    if (state.pits[i] > 0) moves.push(i);
+    if (state.pits[i] > 0 && !(forbidden && forbidden.has(i))) moves.push(i);
   }
   return moves;
 }
@@ -143,7 +164,7 @@ export function applyMove(state: MancalaState, pitIndex: number): MoveResult {
       : player === 'TERRANOVA' ? 'OPPONENT' : 'TERRANOVA';
 
   return {
-    state: { pits, storeT, storeO, turn: nextTurn },
+    state: { pits, storeT, storeO, turn: nextTurn, isOpeningPosition: false },
     extraTurn,
     captured,
     gameOver,
