@@ -62,21 +62,34 @@ async function extractPdfText(pdfBuffer: Buffer): Promise<string> {
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
   app.use(express.json({ limit: "20mb" }));
 
-  // Initialize Gemini Client using Vertex AI
-  const ai = new GoogleGenAI({
-    vertexai: true,
-    project: process.env.GCP_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || "9dcf0bb9-608e-4115-b23a-e9189128a939",
-    location: process.env.GCP_LOCATION || "us-central1",
-    httpOptions: {
-      headers: {
-        "User-Agent": "aistudio-build",
-      },
-    },
-  });
+  // Initialize Gemini Client. Prefer a plain Gemini Developer API key (works on
+  // any host - Render, Railway, Fly, a VPS, etc.) when GEMINI_API_KEY is set.
+  // Falls back to Vertex AI + Application Default Credentials, which only
+  // works when running inside the GCP project those credentials belong to
+  // (e.g. an AI Studio-managed Cloud Run deployment).
+  const ai = process.env.GEMINI_API_KEY
+    ? new GoogleGenAI({
+        apiKey: process.env.GEMINI_API_KEY,
+        httpOptions: {
+          headers: {
+            "User-Agent": "aistudio-build",
+          },
+        },
+      })
+    : new GoogleGenAI({
+        vertexai: true,
+        project: process.env.GCP_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || "9dcf0bb9-608e-4115-b23a-e9189128a939",
+        location: process.env.GCP_LOCATION || "us-central1",
+        httpOptions: {
+          headers: {
+            "User-Agent": "aistudio-build",
+          },
+        },
+      });
 
   // Helper function to call Gemini with multi-model fallback & exponential retry for rate limits (429)
   const FALLBACK_MODELS = [
