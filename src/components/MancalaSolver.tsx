@@ -19,6 +19,8 @@ import {
   createInitialState,
   isGameOver,
   legalMoves,
+  pitLetter,
+  sideRange,
   totalStones,
   STANDARD_TOTAL_STONES,
 } from '../mancala/engine';
@@ -138,13 +140,13 @@ export const MancalaSolver: React.FC = () => {
     setState((s) => {
       const pits = s.pits.slice();
       pits[idx] = v;
-      return { ...s, pits };
+      return { ...s, pits, isOpeningPosition: false };
     });
   };
 
   const editStore = (side: 'T' | 'O', value: number) => {
     const v = Math.max(0, Math.floor(Number.isFinite(value) ? value : 0));
-    setState((s) => (side === 'T' ? { ...s, storeT: v } : { ...s, storeO: v }));
+    setState((s) => (side === 'T' ? { ...s, storeT: v, isOpeningPosition: false } : { ...s, storeO: v, isOpeningPosition: false }));
   };
 
   const finishEditing = () => {
@@ -157,6 +159,12 @@ export const MancalaSolver: React.FC = () => {
 
   const bestMove = solveResult?.bestMove ?? null;
   const bestPit = bestMove?.pit;
+  const currentLegalMoves = !editMode && !gameOver ? legalMoves(state) : [];
+  const openingForbiddenPits = useMemo(() => {
+    if (editMode || gameOver || !state.isOpeningPosition) return new Set<number>();
+    const [start] = sideRange(state.turn);
+    return new Set([start + 2, start + 5]);
+  }, [editMode, gameOver, state.isOpeningPosition, state.turn]);
 
   const winnerText = useMemo(() => {
     if (!gameOver) return null;
@@ -178,6 +186,11 @@ export const MancalaSolver: React.FC = () => {
             TERRANOVA move that wins outright ({WIN_THRESHOLD}+ stones). If no win is provable,
             it falls back to the best move that can still force a draw ({DRAW_TOTAL_PER_SIDE}–{DRAW_TOTAL_PER_SIDE}),
             or otherwise the strongest available move.
+          </p>
+          <p className="text-[11px] text-[#888]/80 mt-1 max-w-xl">
+            House rule: on a fresh board, the starting player may not open with their{' '}
+            <span className="text-[#e0e0e0] font-semibold">c</span> or{' '}
+            <span className="text-[#e0e0e0] font-semibold">f</span> pit.
           </p>
         </div>
 
@@ -207,7 +220,7 @@ export const MancalaSolver: React.FC = () => {
       </div>
 
       {/* Board */}
-      <div className="rounded-2xl bg-gradient-to-b from-[#3a2a17] to-[#2a1d10] border border-[#4a3620] p-4 sm:p-6 shadow-xl">
+      <div className="rounded-2xl bg-gradient-to-b from-[#3a2a17] to-[#2a1d10] border border-[#4a3620] p-5 sm:p-8 shadow-xl">
         {/* OPPONENT label bar */}
         <div className="flex items-center justify-between mb-3">
           <span className={`text-xs font-bold tracking-widest uppercase px-2.5 py-1 rounded ${state.turn === 'OPPONENT' && !gameOver ? 'bg-[#d4af37] text-black' : 'bg-black/30 text-[#e8c874]'}`}>
@@ -219,7 +232,7 @@ export const MancalaSolver: React.FC = () => {
         <div className="flex items-stretch gap-2 sm:gap-3">
           <StoreCapsule label="OPPONENT" value={state.storeO} editable={editMode} onChange={(v) => editStore('O', v)} accent="amber" />
 
-          <div className="flex-1 grid grid-rows-2 gap-2 sm:gap-3">
+          <div className="flex-1 grid grid-rows-2 gap-5 sm:gap-7">
             <div className="grid grid-cols-6 gap-2 sm:gap-3">
               {TOP_ROW_VISUAL.map((idx) => (
                 <Pit
@@ -227,8 +240,10 @@ export const MancalaSolver: React.FC = () => {
                   idx={idx}
                   value={state.pits[idx]}
                   editable={editMode}
-                  playable={!editMode && !gameOver && state.turn === 'OPPONENT' && state.pits[idx] > 0}
+                  playable={currentLegalMoves.includes(idx)}
+                  openingForbidden={openingForbiddenPits.has(idx)}
                   highlighted={!editMode && bestPit === idx}
+                  labelPosition="above"
                   onChange={(v) => editPit(idx, v)}
                   onPlay={() => playMove(idx)}
                 />
@@ -241,8 +256,10 @@ export const MancalaSolver: React.FC = () => {
                   idx={idx}
                   value={state.pits[idx]}
                   editable={editMode}
-                  playable={!editMode && !gameOver && state.turn === 'TERRANOVA' && state.pits[idx] > 0}
+                  playable={currentLegalMoves.includes(idx)}
+                  openingForbidden={openingForbiddenPits.has(idx)}
                   highlighted={!editMode && bestPit === idx}
+                  labelPosition="below"
                   onChange={(v) => editPit(idx, v)}
                   onPlay={() => playMove(idx)}
                 />
@@ -359,37 +376,56 @@ function pitDisplayLabel(idx: number): string {
   return idx <= 5 ? `T${idx + 1}` : `O${idx - 6 + 1}`;
 }
 
+// Side-grouped label colors: warm gold family for TERRANOVA (T), cool blue
+// family for OPPONENT (O). Prefix (T/O) uses the more saturated shade;
+// the a-f position letter uses the lighter shade of the same family.
+const LABEL_COLORS = {
+  TERRANOVA: { prefix: '#d4af37', letter: '#f3e2b5' },
+  OPPONENT: { prefix: '#6fb1e8', letter: '#bfe0fb' },
+} as const;
+
+const PitLabel: React.FC<{ idx: number }> = ({ idx }) => {
+  const side: Side = idx <= 5 ? 'TERRANOVA' : 'OPPONENT';
+  const colors = LABEL_COLORS[side];
+  return (
+    <span className="text-[10px] font-bold leading-none tracking-wide select-none whitespace-nowrap">
+      <span style={{ color: colors.prefix }}>{side === 'TERRANOVA' ? 'T' : 'O'}</span>
+      <span style={{ color: colors.letter, fontSize: '0.8em', verticalAlign: 'sub' }}>{pitLetter(idx)}</span>
+    </span>
+  );
+};
+
 const Pit: React.FC<{
   idx: number;
   value: number;
   editable: boolean;
   playable: boolean;
+  openingForbidden: boolean;
   highlighted: boolean;
+  labelPosition: 'above' | 'below';
   onChange: (v: number) => void;
   onPlay: () => void;
-}> = ({ value, editable, playable, highlighted, onChange, onPlay }) => {
-  if (editable) {
-    return (
-      <input
-        type="number"
-        min={0}
-        value={value}
-        onChange={(e) => onChange(parseInt(e.target.value, 10))}
-        className="w-full aspect-square rounded-full bg-[#e6c98a] text-black text-center font-bold text-sm sm:text-base border-2 border-[#8a6a3a] focus:outline-none focus:border-[#d4af37]"
-      />
-    );
-  }
+}> = ({ idx, value, editable, playable, openingForbidden, highlighted, labelPosition, onChange, onPlay }) => {
+  const label = <PitLabel idx={idx} />;
 
-  return (
+  const circle = editable ? (
+    <input
+      type="number"
+      min={0}
+      value={value}
+      onChange={(e) => onChange(parseInt(e.target.value, 10))}
+      className="w-full h-full rounded-full bg-[#e6c98a] text-black text-center font-bold text-sm sm:text-base border-2 border-[#8a6a3a] focus:outline-none focus:border-[#d4af37]"
+    />
+  ) : (
     <button
       onClick={onPlay}
       disabled={!playable}
-      className={`relative aspect-square rounded-full flex items-center justify-center font-bold text-sm sm:text-lg transition border-2 ${
+      className={`relative w-full h-full rounded-full flex items-center justify-center font-bold text-sm sm:text-lg transition border-2 ${
         highlighted
           ? 'bg-emerald-400 text-black border-emerald-200 shadow-[0_0_0_3px_rgba(74,222,128,0.4)]'
           : 'bg-[#e6c98a] text-[#3a2a17] border-[#8a6a3a]'
       } ${playable ? 'cursor-pointer hover:brightness-110 hover:scale-[1.04]' : 'cursor-default opacity-90'}`}
-      title={playable ? 'Play this pit' : undefined}
+      title={playable ? 'Play this pit' : openingForbidden ? 'Opening move: the c and f pits cannot open the game' : undefined}
     >
       {value}
       {highlighted && (
@@ -398,6 +434,14 @@ const Pit: React.FC<{
         </span>
       )}
     </button>
+  );
+
+  return (
+    <div className="flex flex-col items-center gap-1">
+      {labelPosition === 'above' && label}
+      <div className="w-[90%] aspect-square">{circle}</div>
+      {labelPosition === 'below' && label}
+    </div>
   );
 };
 
