@@ -91,7 +91,10 @@ async function startServer() {
 
       // Always show the same response whether or not the email is approved,
       // so this endpoint can't be used to enumerate approved accounts.
-      const approved = await isEmailApproved(email);
+      // The admin is implicitly always approved - never needs a separate
+      // approved_emails row, which would otherwise be a chicken-and-egg
+      // problem for bootstrapping the very first account.
+      const approved = email === adminEmail() || (await isEmailApproved(email));
       if (approved) {
         const rawToken = await createLoginToken(email);
         const loginUrl = `${appBaseUrl()}/auth/verify?token=${rawToken}`;
