@@ -26,6 +26,9 @@ export interface MancalaState {
 export const PITS_PER_SIDE = 6;
 export const STARTING_STONES_PER_PIT = 4;
 export const STANDARD_TOTAL_STONES = PITS_PER_SIDE * STARTING_STONES_PER_PIT * 2; // 48
+// Majority of the standard 48-stone game - reaching this ends the game
+// immediately, before either side's pits are necessarily empty.
+export const WIN_THRESHOLD = 25;
 
 export function createInitialState(firstTurn: Side = 'TERRANOVA'): MancalaState {
   return {
@@ -82,6 +85,7 @@ export function legalMoves(state: MancalaState): number[] {
 }
 
 export function isGameOver(state: MancalaState): boolean {
+  if (state.storeT >= WIN_THRESHOLD || state.storeO >= WIN_THRESHOLD) return true;
   const tSum = state.pits[0] + state.pits[1] + state.pits[2] + state.pits[3] + state.pits[4] + state.pits[5];
   const oSum = state.pits[6] + state.pits[7] + state.pits[8] + state.pits[9] + state.pits[10] + state.pits[11];
   return tSum === 0 || oSum === 0;
@@ -153,7 +157,13 @@ export function applyMove(state: MancalaState, pitIndex: number): MoveResult {
   const tSum = pits[0] + pits[1] + pits[2] + pits[3] + pits[4] + pits[5];
   const oSum = pits[6] + pits[7] + pits[8] + pits[9] + pits[10] + pits[11];
   let gameOver = false;
-  if (tSum === 0 || oSum === 0) {
+  if (storeT >= WIN_THRESHOLD || storeO >= WIN_THRESHOLD || tSum === 0 || oSum === 0) {
+    // Sweep whatever's left on the board into each side's own store. When
+    // triggered by one side's pits being empty this is the standard rule
+    // (the empty side contributes nothing, so this is a no-op for them);
+    // when triggered by reaching WIN_THRESHOLD before that happens, this
+    // fully resolves the board instead of leaving an already-decided game
+    // stuck mid-play.
     storeT += tSum;
     storeO += oSum;
     for (let i = 0; i < 12; i++) pits[i] = 0;
