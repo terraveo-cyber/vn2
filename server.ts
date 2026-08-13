@@ -10,11 +10,13 @@ import {
   createSession,
   destroySession,
   getSessionUser,
+  isApprovedAdmin,
   isEmailApproved,
   isRateLimited,
   isValidEmail,
   normalizeEmail,
   revokeApprovedEmail,
+  setApprovedEmailAdmin,
   signPendingDuo,
   upsertUser,
   verifyPendingDuo,
@@ -228,13 +230,30 @@ async function startServer() {
     next();
   }
 
-  function requireAdmin(req: Request, res: Response, next: NextFunction) {
-    if (!req.sessionUser || req.sessionUser.email !== adminEmail()) {
+  // True for the env-configured bootstrap admin (ADMIN_EMAIL) or anyone
+  // subsequently granted admin rights via the approved_emails table.
+  async function isAdminUser(email: string): Promise<boolean> {
+    return email === adminEmail() || (await isApprovedAdmin(email));
+  }
+
+  const requireAdmin = asyncHandler(async (req, res, next) => {
+    if (!req.sessionUser || !(await isAdminUser(req.sessionUser.email))) {
       res.status(404).type("html").send(errorPage("Not found."));
       return;
     }
     next();
-  }
+  });
+
+  app.get(
+    "/api/whoami",
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      res.json({
+        email: req.sessionUser!.email,
+        isAdmin: await isAdminUser(req.sessionUser!.email),
+      });
+    })
+  );
 
   // --- Admin routes ------------------------------------------------------
 
@@ -244,15 +263,19 @@ async function startServer() {
     requireAdmin,
     asyncHandler(async (req, res) => {
       const [approved, users] = await Promise.all([
-        pool.query(`SELECT email, approved_at, approved_by FROM approved_emails ORDER BY approved_at DESC`),
+        pool.query(`SELECT email, approved_at, approved_by, is_admin FROM approved_emails ORDER BY approved_at DESC`),
         pool.query(`SELECT email, created_at, last_login_at FROM users ORDER BY created_at DESC`),
       ]);
+      let message: string | undefined;
+      if (req.query.approved) message = `Approved ${req.query.approved} email(s).`;
+      else if (req.query.revoked) message = "Access revoked.";
+      else if (req.query.adminSet) message = "Admin access updated.";
       res.type("html").send(
         adminPage({
           adminEmail: req.sessionUser!.email,
           approved: approved.rows,
           users: users.rows,
-          message: req.query.approved ? "Email approved." : req.query.revoked ? "Access revoked." : undefined,
+          message,
         })
       );
     })
@@ -263,11 +286,20 @@ async function startServer() {
     requireAuth,
     requireAdmin,
     asyncHandler(async (req, res) => {
-      const email = normalizeEmail(typeof req.body?.email === "string" ? req.body.email : "");
-      if (isValidEmail(email)) {
-        await approveEmail(email, req.sessionUser!.email);
+      // Accepts one or many emails, separated by semicolons, commas,
+      // newlines, or whitespace, so a whole list can be pasted at once.
+      const raw: string = typeof req.body?.emails === "string" ? req.body.emails : "";
+      const grantAdmin = req.body?.grantAdmin === "on";
+      const candidates: string[] = raw
+        .split(/[;,\n]+/)
+        .map((e) => normalizeEmail(e))
+        .filter((e) => e.length > 0);
+      const uniqueValid: string[] = Array.from(new Set(candidates)).filter((e) => isValidEmail(e));
+
+      for (const email of uniqueValid) {
+        await approveEmail(email, req.sessionUser!.email, grantAdmin);
       }
-      res.redirect("/admin?approved=1");
+      res.redirect(`/admin?approved=${uniqueValid.length}`);
     })
   );
 
@@ -281,6 +313,20 @@ async function startServer() {
         await revokeApprovedEmail(email);
       }
       res.redirect("/admin?revoked=1");
+    })
+  );
+
+  app.post(
+    "/admin/toggle-admin",
+    requireAuth,
+    requireAdmin,
+    asyncHandler(async (req, res) => {
+      const email = normalizeEmail(typeof req.body?.email === "string" ? req.body.email : "");
+      const makeAdmin = req.body?.makeAdmin === "1";
+      if (isValidEmail(email)) {
+        await setApprovedEmailAdmin(email, makeAdmin);
+      }
+      res.redirect("/admin?adminSet=1");
     })
   );
 
