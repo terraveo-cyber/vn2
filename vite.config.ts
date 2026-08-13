@@ -13,9 +13,9 @@ export default defineConfig(() => {
         registerType: 'autoUpdate',
         includeAssets: ['apple-touch-icon.png'],
         manifest: {
-          name: 'Verba Nova II',
-          short_name: 'Verba Nova II',
-          description: 'Ebook translation suite with built-in Mancala solver.',
+          name: 'Mancala Solver',
+          short_name: 'Mancala Solver',
+          description: 'Mancala (Kalah) solver with win/draw move suggestions for TERRANOVA vs OPPONENT.',
           start_url: '/',
           scope: '/',
           display: 'standalone',
@@ -30,8 +30,8 @@ export default defineConfig(() => {
         },
         workbox: {
           // App-shell only: HTML/JS/CSS are cached for fast repeat loads and
-          // offline navigation, but /api/* calls always hit the network since
-          // translation results depend on live server state.
+          // offline navigation; /api/* (just a health check) always hits the
+          // network rather than being cached.
           navigateFallbackDenylist: [/^\/api\//],
           runtimeCaching: [
             {
