@@ -68,16 +68,28 @@ export async function isEmailApproved(email: string): Promise<boolean> {
   return rows.length > 0;
 }
 
-export async function approveEmail(email: string, approvedBy: string): Promise<void> {
+export async function approveEmail(email: string, approvedBy: string, isAdmin: boolean = false): Promise<void> {
   await pool.query(
-    `INSERT INTO approved_emails (email, approved_by) VALUES ($1, $2)
-     ON CONFLICT (email) DO NOTHING`,
-    [email, approvedBy]
+    `INSERT INTO approved_emails (email, approved_by, is_admin) VALUES ($1, $2, $3)
+     ON CONFLICT (email) DO UPDATE SET is_admin = EXCLUDED.is_admin OR approved_emails.is_admin`,
+    [email, approvedBy, isAdmin]
   );
 }
 
 export async function revokeApprovedEmail(email: string): Promise<void> {
   await pool.query(`DELETE FROM approved_emails WHERE email = $1`, [email]);
+}
+
+export async function setApprovedEmailAdmin(email: string, isAdmin: boolean): Promise<void> {
+  await pool.query(`UPDATE approved_emails SET is_admin = $2 WHERE email = $1`, [email, isAdmin]);
+}
+
+// True for the env-configured bootstrap admin OR anyone granted admin via
+// the approved_emails table (checked separately by the caller, which
+// already knows the bootstrap admin's email from ADMIN_EMAIL).
+export async function isApprovedAdmin(email: string): Promise<boolean> {
+  const { rows } = await pool.query(`SELECT 1 FROM approved_emails WHERE email = $1 AND is_admin = true`, [email]);
+  return rows.length > 0;
 }
 
 export async function upsertUser(email: string): Promise<string> {

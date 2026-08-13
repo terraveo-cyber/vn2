@@ -24,8 +24,12 @@ export async function initSchema(): Promise<void> {
     CREATE TABLE IF NOT EXISTS approved_emails (
       email TEXT PRIMARY KEY,
       approved_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      approved_by TEXT NOT NULL
+      approved_by TEXT NOT NULL,
+      is_admin BOOLEAN NOT NULL DEFAULT false
     );
+
+    -- Migration for tables that already existed before is_admin was added.
+    ALTER TABLE approved_emails ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false;
 
     CREATE TABLE IF NOT EXISTS users (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
