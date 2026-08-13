@@ -1,6 +1,57 @@
-import express from "express";
+import express, { type NextFunction, type Request, type Response } from "express";
 import path from "path";
+import { parse as parseCookies, serialize as serializeCookie } from "cookie";
 import { createServer as createViteServer } from "vite";
+import { initSchema } from "./server/db";
+import {
+  approveEmail,
+  consumeLoginToken,
+  createLoginToken,
+  createSession,
+  destroySession,
+  getSessionUser,
+  isEmailApproved,
+  isRateLimited,
+  isValidEmail,
+  normalizeEmail,
+  revokeApprovedEmail,
+  signPendingDuo,
+  upsertUser,
+  verifyPendingDuo,
+  type SessionUser,
+} from "./server/auth";
+import { sendLoginLinkEmail } from "./server/email";
+import { getDuoClient } from "./server/duoClient";
+import { adminPage, errorPage, loginPage } from "./server/pages";
+import { pool } from "./server/db";
+
+const SESSION_COOKIE = "session";
+const PENDING_DUO_COOKIE = "duo_pending";
+const isProd = process.env.NODE_ENV === "production";
+
+function appBaseUrl(): string {
+  const url = process.env.APP_BASE_URL;
+  if (!url) throw new Error("Missing required environment variable: APP_BASE_URL");
+  return url;
+}
+
+function adminEmail(): string {
+  const email = process.env.ADMIN_EMAIL;
+  if (!email) throw new Error("Missing required environment variable: ADMIN_EMAIL");
+  return normalizeEmail(email);
+}
+
+function asyncHandler(fn: (req: Request, res: Response, next: NextFunction) => Promise<void>) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    fn(req, res, next).catch(next);
+  };
+}
+
+declare module "express-serve-static-core" {
+  interface Request {
+    sessionUser?: SessionUser;
+  }
+}
 
 async function startServer() {
   const app = express();
@@ -10,8 +61,213 @@ async function startServer() {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
-  // Vite development or static production setup
-  if (process.env.NODE_ENV !== "production") {
+  app.use((req, _res, next) => {
+    (req as unknown as { cookies: Record<string, string> }).cookies = parseCookies(req.headers.cookie || "");
+    next();
+  });
+  app.use(express.urlencoded({ extended: false }));
+
+  // --- Public auth routes --------------------------------------------------
+
+  app.get("/login", (req, res) => {
+    res.type("html").send(loginPage({ sent: req.query.sent === "1" }));
+  });
+
+  app.post(
+    "/login",
+    asyncHandler(async (req, res) => {
+      const rawEmail = typeof req.body?.email === "string" ? req.body.email : "";
+      const email = normalizeEmail(rawEmail);
+
+      if (!isValidEmail(email)) {
+        res.type("html").send(loginPage({ error: "Enter a valid email address." }));
+        return;
+      }
+
+      if (isRateLimited(email)) {
+        res.type("html").send(loginPage({ error: "Too many requests for that email. Try again later." }));
+        return;
+      }
+
+      // Always show the same response whether or not the email is approved,
+      // so this endpoint can't be used to enumerate approved accounts.
+      const approved = await isEmailApproved(email);
+      if (approved) {
+        const rawToken = await createLoginToken(email);
+        const loginUrl = `${appBaseUrl()}/auth/verify?token=${rawToken}`;
+        try {
+          await sendLoginLinkEmail(email, loginUrl);
+        } catch (err) {
+          console.error("[auth] Failed to send login email:", err);
+        }
+      }
+
+      res.redirect("/login?sent=1");
+    })
+  );
+
+  app.get(
+    "/auth/verify",
+    asyncHandler(async (req, res) => {
+      const token = typeof req.query.token === "string" ? req.query.token : "";
+      const email = token ? await consumeLoginToken(token) : null;
+
+      if (!email) {
+        res.status(400).type("html").send(errorPage("That sign-in link is invalid or has expired. Request a new one."));
+        return;
+      }
+
+      const duo = getDuoClient();
+      const state = duo.generateState();
+      const authUrl = await duo.createAuthUrl(email, state);
+
+      res.setHeader(
+        "Set-Cookie",
+        serializeCookie(PENDING_DUO_COOKIE, signPendingDuo(email, state), {
+          httpOnly: true,
+          secure: isProd,
+          sameSite: "lax",
+          path: "/",
+          maxAge: 600,
+        })
+      );
+      res.redirect(authUrl);
+    })
+  );
+
+  app.get(
+    "/auth/duo/callback",
+    asyncHandler(async (req, res) => {
+      const cookieVal = req.cookies[PENDING_DUO_COOKIE];
+      const pending = cookieVal ? verifyPendingDuo(cookieVal) : null;
+      const duoCode = typeof req.query.duo_code === "string" ? req.query.duo_code : "";
+      const state = typeof req.query.state === "string" ? req.query.state : "";
+
+      const clearPending = serializeCookie(PENDING_DUO_COOKIE, "", { path: "/", maxAge: 0 });
+
+      if (!pending || !duoCode || !state || pending.state !== state) {
+        res.setHeader("Set-Cookie", clearPending);
+        res.status(400).type("html").send(errorPage("Your sign-in attempt expired or was invalid. Please try again."));
+        return;
+      }
+
+      try {
+        await getDuoClient().exchangeAuthorizationCodeFor2FAResult(duoCode, pending.email);
+      } catch (err) {
+        console.error("[auth] Duo verification failed:", err);
+        res.setHeader("Set-Cookie", clearPending);
+        res.status(401).type("html").send(errorPage("Two-factor verification failed. Please try signing in again."));
+        return;
+      }
+
+      const userId = await upsertUser(pending.email);
+      const sessionToken = await createSession(userId);
+
+      res.setHeader("Set-Cookie", [
+        clearPending,
+        serializeCookie(SESSION_COOKIE, sessionToken, {
+          httpOnly: true,
+          secure: isProd,
+          sameSite: "lax",
+          path: "/",
+          maxAge: 14 * 24 * 60 * 60,
+        }),
+      ]);
+      res.redirect("/");
+    })
+  );
+
+  app.post(
+    "/auth/logout",
+    asyncHandler(async (req, res) => {
+      const token = req.cookies[SESSION_COOKIE];
+      if (token) await destroySession(token);
+      res.setHeader("Set-Cookie", serializeCookie(SESSION_COOKIE, "", { path: "/", maxAge: 0 }));
+      res.redirect("/login");
+    })
+  );
+
+  // --- Session resolution ----------------------------------------------------
+
+  app.use(
+    asyncHandler(async (req, _res, next) => {
+      const token = req.cookies[SESSION_COOKIE];
+      if (token) {
+        req.sessionUser = (await getSessionUser(token)) ?? undefined;
+      }
+      next();
+    })
+  );
+
+  function requireAuth(req: Request, res: Response, next: NextFunction) {
+    if (!req.sessionUser) {
+      res.redirect("/login");
+      return;
+    }
+    next();
+  }
+
+  function requireAdmin(req: Request, res: Response, next: NextFunction) {
+    if (!req.sessionUser || req.sessionUser.email !== adminEmail()) {
+      res.status(404).type("html").send(errorPage("Not found."));
+      return;
+    }
+    next();
+  }
+
+  // --- Admin routes ------------------------------------------------------
+
+  app.get(
+    "/admin",
+    requireAuth,
+    requireAdmin,
+    asyncHandler(async (req, res) => {
+      const [approved, users] = await Promise.all([
+        pool.query(`SELECT email, approved_at, approved_by FROM approved_emails ORDER BY approved_at DESC`),
+        pool.query(`SELECT email, created_at, last_login_at FROM users ORDER BY created_at DESC`),
+      ]);
+      res.type("html").send(
+        adminPage({
+          adminEmail: req.sessionUser!.email,
+          approved: approved.rows,
+          users: users.rows,
+          message: req.query.approved ? "Email approved." : req.query.revoked ? "Access revoked." : undefined,
+        })
+      );
+    })
+  );
+
+  app.post(
+    "/admin/approve",
+    requireAuth,
+    requireAdmin,
+    asyncHandler(async (req, res) => {
+      const email = normalizeEmail(typeof req.body?.email === "string" ? req.body.email : "");
+      if (isValidEmail(email)) {
+        await approveEmail(email, req.sessionUser!.email);
+      }
+      res.redirect("/admin?approved=1");
+    })
+  );
+
+  app.post(
+    "/admin/revoke",
+    requireAuth,
+    requireAdmin,
+    asyncHandler(async (req, res) => {
+      const email = normalizeEmail(typeof req.body?.email === "string" ? req.body.email : "");
+      if (isValidEmail(email)) {
+        await revokeApprovedEmail(email);
+      }
+      res.redirect("/admin?revoked=1");
+    })
+  );
+
+  // --- Everything else requires a valid session ------------------------------
+
+  app.use(requireAuth);
+
+  if (!isProd) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -25,9 +281,14 @@ async function startServer() {
     });
   }
 
+  await initSchema();
+
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Mancala Solver server running on http://0.0.0.0:${PORT}`);
   });
 }
 
-startServer();
+startServer().catch((err) => {
+  console.error("[startup] Failed to start server:", err);
+  process.exit(1);
+});
