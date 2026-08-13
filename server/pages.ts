@@ -8,27 +8,42 @@ function escapeHtml(s: string): string {
 }
 
 const BASE_STYLE = `
-  html, body { margin: 0; padding: 0; background: #111111; color: #e0e0e0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-  .wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; box-sizing: border-box; }
-  .card { max-width: 400px; width: 100%; background: #181818; border: 1px solid #2a2a2a; border-radius: 12px; padding: 32px; }
+  * { box-sizing: border-box; min-width: 0; }
+  html, body { margin: 0; padding: 0; background: #111111; color: #e0e0e0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow-x: hidden; }
+  .wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; }
+  .card { max-width: 400px; width: 100%; background: #181818; border: 1px solid #2a2a2a; border-radius: 12px; padding: 20px; overflow-wrap: anywhere; }
   h1 { color: #d4af37; font-size: 20px; margin: 0 0 8px; }
   p { color: #aaa; font-size: 14px; line-height: 1.5; }
-  input[type=email], input[type=text], textarea { width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 6px; border: 1px solid #333; background: #111; color: #e0e0e0; font-size: 14px; margin: 8px 0 16px; font-family: inherit; }
+  input[type=email], input[type=text], textarea { width: 100%; padding: 10px 12px; border-radius: 6px; border: 1px solid #333; background: #111; color: #e0e0e0; font-size: 14px; margin: 8px 0 16px; font-family: inherit; }
   textarea { min-height: 70px; resize: vertical; }
   button { width: 100%; padding: 10px 12px; border-radius: 6px; border: none; background: #d4af37; color: #111; font-weight: bold; font-size: 14px; cursor: pointer; }
   button:hover { filter: brightness(1.08); }
   a { color: #d4af37; }
   .error { color: #f87171; font-size: 13px; margin-bottom: 12px; }
   .hint { color: #888; font-size: 12px; margin: -12px 0 12px; }
-  .checkbox-row { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; font-size: 13px; color: #ccc; }
+  .checkbox-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 16px; font-size: 13px; color: #ccc; }
   .checkbox-row input { width: auto; margin: 0; }
-  table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 13px; }
-  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #2a2a2a; }
-  th { color: #888; font-weight: normal; }
+  /* Row/cell lists replace <table> so content that can't fit on one line
+     wraps to the next and re-centers, instead of overflowing the card. */
+  .list { margin-top: 12px; }
+  .list-row {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: center;
+    gap: 4px 12px; padding: 12px 0; border-bottom: 1px solid #2a2a2a;
+    text-align: center; font-size: 13px;
+  }
+  .list-row:last-child { border-bottom: none; }
+  .list-cell { overflow-wrap: anywhere; }
+  .list-email { font-weight: 600; }
+  .list-meta { color: #888; font-size: 12px; }
+  .list-empty { color: #666; text-align: center; padding: 12px 0; font-size: 13px; }
   .revoke { background: #3a1a1a; color: #f87171; padding: 4px 8px; border-radius: 4px; font-size: 12px; width: auto; }
-  .admin-toggle { background: #1a2a3a; color: #7ec8f2; padding: 4px 8px; border-radius: 4px; font-size: 12px; width: auto; margin-left: 4px; }
-  .admin-badge { background: #2a2210; color: #d4af37; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 6px; }
-  .row-actions { display: flex; gap: 4px; }
+  .admin-toggle { background: #1a2a3a; color: #7ec8f2; padding: 4px 8px; border-radius: 4px; font-size: 12px; width: auto; }
+  .admin-badge { background: #2a2210; color: #d4af37; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 6px; white-space: nowrap; }
+  .row-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+  @media (min-width: 520px) {
+    .wrap { padding: 24px; }
+    .card { padding: 32px; }
+  }
 `;
 
 function shell(title: string, body: string): string {
@@ -82,34 +97,31 @@ export function adminPage(opts: {
 }): string {
   const approvedRows = opts.approved
     .map(
-      (a) => `<tr>
-        <td>${escapeHtml(a.email)}${a.is_admin ? `<span class="admin-badge">ADMIN</span>` : ""}</td>
-        <td>${new Date(a.approved_at).toLocaleString()}</td>
-        <td>${escapeHtml(a.approved_by)}</td>
-        <td>
-          <div class="row-actions">
-            <form method="POST" action="/admin/revoke" style="margin:0;">
-              <input type="hidden" name="email" value="${escapeHtml(a.email)}" />
-              <button type="submit" class="revoke" onclick="return confirm('Revoke access for ${escapeHtml(a.email)}?')">Revoke</button>
-            </form>
-            <form method="POST" action="/admin/toggle-admin" style="margin:0;">
-              <input type="hidden" name="email" value="${escapeHtml(a.email)}" />
-              <input type="hidden" name="makeAdmin" value="${a.is_admin ? "0" : "1"}" />
-              <button type="submit" class="admin-toggle">${a.is_admin ? "Remove admin" : "Make admin"}</button>
-            </form>
-          </div>
-        </td>
-      </tr>`
+      (a) => `<div class="list-row">
+        <div class="list-cell list-email">${escapeHtml(a.email)}${a.is_admin ? `<span class="admin-badge">ADMIN</span>` : ""}</div>
+        <div class="list-cell list-meta">approved ${new Date(a.approved_at).toLocaleString()} by ${escapeHtml(a.approved_by)}</div>
+        <div class="row-actions">
+          <form method="POST" action="/admin/revoke" style="margin:0;">
+            <input type="hidden" name="email" value="${escapeHtml(a.email)}" />
+            <button type="submit" class="revoke" onclick="return confirm('Revoke access for ${escapeHtml(a.email)}?')">Revoke</button>
+          </form>
+          <form method="POST" action="/admin/toggle-admin" style="margin:0;">
+            <input type="hidden" name="email" value="${escapeHtml(a.email)}" />
+            <input type="hidden" name="makeAdmin" value="${a.is_admin ? "0" : "1"}" />
+            <button type="submit" class="admin-toggle">${a.is_admin ? "Remove admin" : "Make admin"}</button>
+          </form>
+        </div>
+      </div>`
     )
     .join("");
 
   const userRows = opts.users
     .map(
-      (u) => `<tr>
-        <td>${escapeHtml(u.email)}</td>
-        <td>${new Date(u.created_at).toLocaleString()}</td>
-        <td>${u.last_login_at ? new Date(u.last_login_at).toLocaleString() : "—"}</td>
-      </tr>`
+      (u) => `<div class="list-row">
+        <div class="list-cell list-email">${escapeHtml(u.email)}</div>
+        <div class="list-cell list-meta">joined ${new Date(u.created_at).toLocaleString()}</div>
+        <div class="list-cell list-meta">${u.last_login_at ? `last login ${new Date(u.last_login_at).toLocaleString()}` : "never logged in"}</div>
+      </div>`
     )
     .join("");
 
@@ -131,16 +143,14 @@ export function adminPage(opts: {
       </form>
 
       <h2 style="color:#e0e0e0; font-size:15px; margin-top:24px;">Approved emails (${opts.approved.length})</h2>
-      <table>
-        <tr><th>Email</th><th>Approved</th><th>By</th><th></th></tr>
-        ${approvedRows || `<tr><td colspan="4" style="color:#666;">None yet</td></tr>`}
-      </table>
+      <div class="list">
+        ${approvedRows || `<div class="list-empty">None yet</div>`}
+      </div>
 
       <h2 style="color:#e0e0e0; font-size:15px; margin-top:24px;">Registered users (${opts.users.length})</h2>
-      <table>
-        <tr><th>Email</th><th>Joined</th><th>Last login</th></tr>
-        ${userRows || `<tr><td colspan="3" style="color:#666;">None yet</td></tr>`}
-      </table>
+      <div class="list">
+        ${userRows || `<div class="list-empty">None yet</div>`}
+      </div>
     </div></div>
   `;
   return shell("Admin — Mancala Solver", body);
