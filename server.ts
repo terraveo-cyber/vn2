@@ -61,6 +61,24 @@ async function startServer() {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
+  // PWA plumbing (service worker, its precache manifest chunk, the web
+  // manifest, icons) must stay reachable regardless of auth state. None of
+  // it is sensitive - it's just caching/install metadata - and browsers
+  // flatly refuse to register a service worker whose script response is a
+  // redirect, which is exactly what gating this behind requireAuth would
+  // produce for every signed-out visitor.
+  if (isProd) {
+    const distPath = path.join(process.cwd(), "dist");
+    const PUBLIC_ASSET_PATTERN = /^\/(sw\.js|workbox-[\w-]+\.js|registerSW\.js|manifest\.webmanifest|icon-[\w.-]+\.png|apple-touch-icon\.png)$/;
+    app.use((req, res, next) => {
+      if (PUBLIC_ASSET_PATTERN.test(req.path)) {
+        express.static(distPath)(req, res, next);
+        return;
+      }
+      next();
+    });
+  }
+
   app.use((req, _res, next) => {
     (req as unknown as { cookies: Record<string, string> }).cookies = parseCookies(req.headers.cookie || "");
     next();
