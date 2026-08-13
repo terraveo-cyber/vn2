@@ -22,11 +22,11 @@ import {
   pitLetter,
   totalStones,
   STANDARD_TOTAL_STONES,
+  WIN_THRESHOLD,
 } from '../mancala/engine';
 import { MoveEvaluation, SolveResult } from '../mancala/solver';
 import type { SolverRequest, SolverResponse } from '../mancala/solver.worker';
 
-const WIN_THRESHOLD = 25; // majority of the standard 48-stone game
 const DRAW_TOTAL_PER_SIDE = 24;
 
 const TOP_ROW_VISUAL = [11, 10, 9, 8, 7, 6]; // O6..O1, left to right
@@ -70,8 +70,10 @@ export const MancalaSolver: React.FC = () => {
     return () => worker.terminate();
   }, []);
 
+  // Suggestions exist purely to help TERRANOVA decide - never compute or
+  // show one for OPPONENT's turn, so this can't double as opponent-assist.
   const runSolve = (targetState: MancalaState) => {
-    if (isGameOver(targetState) || !workerRef.current) return;
+    if (targetState.turn !== 'TERRANOVA' || isGameOver(targetState) || !workerRef.current) return;
     const requestId = ++requestCounter;
     pendingRequestId.current = requestId;
     setSolving(true);
@@ -79,6 +81,13 @@ export const MancalaSolver: React.FC = () => {
     const req: SolverRequest = { requestId, state: cloneState(targetState) };
     workerRef.current.postMessage(req);
   };
+
+  // Belt-and-suspenders alongside the runSolve guard above: whenever it's
+  // not TERRANOVA's turn, drop any suggestion left over from before (e.g.
+  // after playing OPPONENT's turn manually, or flipping "OPPONENT to move").
+  useEffect(() => {
+    if (state.turn !== 'TERRANOVA') setSolveResult(null);
+  }, [state.turn]);
 
   const gameOver = isGameOver(state);
   const stonesTotal = totalStones(state);
@@ -324,7 +333,8 @@ export const MancalaSolver: React.FC = () => {
 
             <button
               onClick={() => runSolve(state)}
-              disabled={gameOver || solving}
+              disabled={gameOver || solving || state.turn !== 'TERRANOVA'}
+              title={state.turn !== 'TERRANOVA' ? 'Suggestions are only for TERRANOVA - play OPPONENT\'s move to continue' : undefined}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold bg-[#4a90e2] hover:bg-[#3b82f6] text-white transition disabled:opacity-40"
             >
               {solving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
