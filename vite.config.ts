@@ -31,14 +31,14 @@ export default defineConfig(() => {
         workbox: {
           // App-shell caching (HTML/JS/CSS for fast repeat loads) must not
           // swallow navigations to the server's own real routes - the auth
-          // gate (/login, /auth/*, /admin) and the health check are actual
-          // server-rendered pages/endpoints, not part of the SPA, and must
-          // always hit the network rather than being served from the cached
-          // app shell.
-          navigateFallbackDenylist: [/^\/(api|login|auth|admin)(\/|$)/],
+          // gate (/login, /register, /auth/*, /admin) and the health check
+          // are actual server-rendered pages/endpoints, not part of the SPA,
+          // and must always hit the network rather than being served from
+          // the cached app shell.
+          navigateFallbackDenylist: [/^\/(api|login|register|auth|admin)(\/|$)/],
           runtimeCaching: [
             {
-              urlPattern: /^\/(api|login|auth|admin)(\/|$)/,
+              urlPattern: /^\/(api|login|register|auth|admin)(\/|$)/,
               handler: 'NetworkOnly',
             },
           ],

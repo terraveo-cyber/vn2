@@ -9,6 +9,7 @@ import {
   createLoginToken,
   createSession,
   destroySession,
+  dismissAccessRequest,
   getSessionUser,
   isApprovedAdmin,
   isEmailApproved,
@@ -16,6 +17,7 @@ import {
   isValidEmail,
   normalizeEmail,
   peekLoginToken,
+  requestAccess,
   revokeApprovedEmail,
   setApprovedEmailAdmin,
   signPendingDuo,
@@ -25,7 +27,7 @@ import {
 } from "./server/auth";
 import { sendLoginLinkEmail } from "./server/email";
 import { getDuoClient } from "./server/duoClient";
-import { adminPage, confirmSignInPage, errorPage, loginPage } from "./server/pages";
+import { adminPage, confirmSignInPage, errorPage, loginPage, registerPage } from "./server/pages";
 import { pool } from "./server/db";
 
 const SESSION_COOKIE = "session";
@@ -127,6 +129,36 @@ async function startServer() {
       }
 
       res.redirect("/login?sent=1");
+    })
+  );
+
+  app.get("/register", (req, res) => {
+    res.type("html").send(registerPage({ sent: req.query.sent === "1" }));
+  });
+
+  app.post(
+    "/register",
+    asyncHandler(async (req, res) => {
+      const rawEmail = typeof req.body?.email === "string" ? req.body.email : "";
+      const email = normalizeEmail(rawEmail);
+
+      if (!isValidEmail(email)) {
+        res.type("html").send(registerPage({ error: "Enter a valid email address." }));
+        return;
+      }
+
+      if (isRateLimited(email)) {
+        res.type("html").send(registerPage({ error: "Too many requests for that email. Try again later." }));
+        return;
+      }
+
+      if (email === adminEmail() || (await isEmailApproved(email))) {
+        res.type("html").send(registerPage({ alreadyApproved: true }));
+        return;
+      }
+
+      await requestAccess(email);
+      res.redirect("/register?sent=1");
     })
   );
 
@@ -284,7 +316,8 @@ async function startServer() {
     requireAuth,
     requireAdmin,
     asyncHandler(async (req, res) => {
-      const [approved, users] = await Promise.all([
+      const [requests, approved, users] = await Promise.all([
+        pool.query(`SELECT email, requested_at FROM access_requests ORDER BY requested_at DESC`),
         pool.query(`SELECT email, approved_at, approved_by, is_admin FROM approved_emails ORDER BY approved_at DESC`),
         pool.query(`SELECT email, created_at, last_login_at FROM users ORDER BY created_at DESC`),
       ]);
@@ -292,14 +325,43 @@ async function startServer() {
       if (req.query.approved) message = `Approved ${req.query.approved} email(s).`;
       else if (req.query.revoked) message = "Access revoked.";
       else if (req.query.adminSet) message = "Admin access updated.";
+      else if (req.query.dismissed) message = "Request dismissed.";
       res.type("html").send(
         adminPage({
           adminEmail: req.sessionUser!.email,
+          requests: requests.rows,
           approved: approved.rows,
           users: users.rows,
           message,
         })
       );
+    })
+  );
+
+  app.post(
+    "/admin/requests/approve",
+    requireAuth,
+    requireAdmin,
+    asyncHandler(async (req, res) => {
+      const email = normalizeEmail(typeof req.body?.email === "string" ? req.body.email : "");
+      if (isValidEmail(email)) {
+        await approveEmail(email, req.sessionUser!.email, false);
+        await dismissAccessRequest(email);
+      }
+      res.redirect("/admin?approved=1");
+    })
+  );
+
+  app.post(
+    "/admin/requests/dismiss",
+    requireAuth,
+    requireAdmin,
+    asyncHandler(async (req, res) => {
+      const email = normalizeEmail(typeof req.body?.email === "string" ? req.body.email : "");
+      if (isValidEmail(email)) {
+        await dismissAccessRequest(email);
+      }
+      res.redirect("/admin?dismissed=1");
     })
   );
 
