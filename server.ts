@@ -15,6 +15,7 @@ import {
   isRateLimited,
   isValidEmail,
   normalizeEmail,
+  peekLoginToken,
   revokeApprovedEmail,
   setApprovedEmailAdmin,
   signPendingDuo,
@@ -24,7 +25,7 @@ import {
 } from "./server/auth";
 import { sendLoginLinkEmail } from "./server/email";
 import { getDuoClient } from "./server/duoClient";
-import { adminPage, errorPage, loginPage } from "./server/pages";
+import { adminPage, confirmSignInPage, errorPage, loginPage } from "./server/pages";
 import { pool } from "./server/db";
 
 const SESSION_COOKIE = "session";
@@ -129,10 +130,31 @@ async function startServer() {
     })
   );
 
+  // Visiting the emailed link only *peeks* at the token and shows a plain
+  // one-tap confirm page - it does not spend it. Some mail providers
+  // prefetch/scan links in emails automatically, which would silently burn
+  // a single-use token before the human ever opens the message; requiring
+  // an explicit form submit (peekLoginToken never marks anything used)
+  // means only a real tap can move the flow forward.
   app.get(
     "/auth/verify",
     asyncHandler(async (req, res) => {
       const token = typeof req.query.token === "string" ? req.query.token : "";
+      const email = token ? await peekLoginToken(token) : null;
+
+      if (!email) {
+        res.status(400).type("html").send(errorPage("That sign-in link is invalid or has expired. Request a new one."));
+        return;
+      }
+
+      res.type("html").send(confirmSignInPage({ token }));
+    })
+  );
+
+  app.post(
+    "/auth/verify",
+    asyncHandler(async (req, res) => {
+      const token = typeof req.body?.token === "string" ? req.body.token : "";
       const email = token ? await consumeLoginToken(token) : null;
 
       if (!email) {
@@ -168,14 +190,6 @@ async function startServer() {
 
       const clearPending = serializeCookie(PENDING_DUO_COOKIE, "", { path: "/", maxAge: 0 });
 
-      console.log("[diag] /auth/duo/callback hit", {
-        hasCookieVal: Boolean(cookieVal),
-        hasPending: Boolean(pending),
-        hasDuoCode: Boolean(duoCode),
-        hasState: Boolean(state),
-        stateMatches: pending ? pending.state === state : null,
-      });
-
       if (!pending || !duoCode || !state || pending.state !== state) {
         res.setHeader("Set-Cookie", clearPending);
         res.status(400).type("html").send(errorPage("Your sign-in attempt expired or was invalid. Please try again."));
@@ -191,17 +205,8 @@ async function startServer() {
         return;
       }
 
-      console.log("[diag] Duo exchange succeeded for", pending.email);
-
       const userId = await upsertUser(pending.email);
       const sessionToken = await createSession(userId);
-
-      console.log("[diag] session created", {
-        userId,
-        sessionTokenLength: sessionToken.length,
-        isProd,
-        nodeEnv: process.env.NODE_ENV,
-      });
 
       res.setHeader("Set-Cookie", [
         clearPending,
@@ -234,14 +239,6 @@ async function startServer() {
       const token = req.cookies[SESSION_COOKIE];
       if (token) {
         req.sessionUser = (await getSessionUser(token)) ?? undefined;
-      }
-      if (req.method === "GET" && !req.path.startsWith("/assets") && req.path !== "/api/health") {
-        console.log("[diag] session check", {
-          method: req.method,
-          path: req.path,
-          hasCookie: Boolean(token),
-          resolvedUser: req.sessionUser?.email ?? null,
-        });
       }
       next();
     })
