@@ -168,6 +168,14 @@ async function startServer() {
 
       const clearPending = serializeCookie(PENDING_DUO_COOKIE, "", { path: "/", maxAge: 0 });
 
+      console.log("[diag] /auth/duo/callback hit", {
+        hasCookieVal: Boolean(cookieVal),
+        hasPending: Boolean(pending),
+        hasDuoCode: Boolean(duoCode),
+        hasState: Boolean(state),
+        stateMatches: pending ? pending.state === state : null,
+      });
+
       if (!pending || !duoCode || !state || pending.state !== state) {
         res.setHeader("Set-Cookie", clearPending);
         res.status(400).type("html").send(errorPage("Your sign-in attempt expired or was invalid. Please try again."));
@@ -183,8 +191,17 @@ async function startServer() {
         return;
       }
 
+      console.log("[diag] Duo exchange succeeded for", pending.email);
+
       const userId = await upsertUser(pending.email);
       const sessionToken = await createSession(userId);
+
+      console.log("[diag] session created", {
+        userId,
+        sessionTokenLength: sessionToken.length,
+        isProd,
+        nodeEnv: process.env.NODE_ENV,
+      });
 
       res.setHeader("Set-Cookie", [
         clearPending,
@@ -217,6 +234,14 @@ async function startServer() {
       const token = req.cookies[SESSION_COOKIE];
       if (token) {
         req.sessionUser = (await getSessionUser(token)) ?? undefined;
+      }
+      if (req.method === "GET" && !req.path.startsWith("/assets") && req.path !== "/api/health") {
+        console.log("[diag] session check", {
+          method: req.method,
+          path: req.path,
+          hasCookie: Boolean(token),
+          resolvedUser: req.sessionUser?.email ?? null,
+        });
       }
       next();
     })
