@@ -49,6 +49,19 @@ export async function createLoginToken(email: string): Promise<string> {
   return raw;
 }
 
+// Read-only check used to render the confirm-sign-in page without spending
+// the token - actual consumption happens only on the user's explicit tap
+// (see consumeLoginToken), so an automated link-scanner fetching the emailed
+// URL can't burn it before the human gets to click.
+export async function peekLoginToken(raw: string): Promise<string | null> {
+  const tokenHash = hashToken(raw);
+  const { rows } = await pool.query(
+    `SELECT email FROM login_tokens WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()`,
+    [tokenHash]
+  );
+  return rows[0]?.email ?? null;
+}
+
 export async function consumeLoginToken(raw: string): Promise<string | null> {
   const tokenHash = hashToken(raw);
   const { rows } = await pool.query(

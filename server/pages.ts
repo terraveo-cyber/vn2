@@ -78,6 +78,20 @@ export function loginPage(opts: { error?: string; sent?: boolean } = {}): string
   return shell("Sign in — Mancala Solver", body);
 }
 
+export function confirmSignInPage(opts: { token: string }): string {
+  const body = `
+    <div class="wrap"><div class="card">
+      <h1>Mancala Solver</h1>
+      <p>Tap below to continue signing in. You'll then be asked to verify with Duo.</p>
+      <form method="POST" action="/auth/verify">
+        <input type="hidden" name="token" value="${escapeHtml(opts.token)}" />
+        <button type="submit">Continue sign-in</button>
+      </form>
+    </div></div>
+  `;
+  return shell("Confirm sign-in — Mancala Solver", body);
+}
+
 export function errorPage(message: string): string {
   const body = `
     <div class="wrap"><div class="card">
