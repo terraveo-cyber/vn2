@@ -73,9 +73,32 @@ export function loginPage(opts: { error?: string; sent?: boolean } = {}): string
               <button type="submit">Send sign-in link</button>
             </form>`
       }
+      <p style="text-align:center; font-size:13px;">Don't have access yet? <a href="/register">Request access</a></p>
     </div></div>
   `;
   return shell("Sign in — Mancala Solver", body);
+}
+
+export function registerPage(opts: { error?: string; sent?: boolean; alreadyApproved?: boolean } = {}): string {
+  const body = `
+    <div class="wrap"><div class="card">
+      <h1>Request access</h1>
+      <p>Enter your email to request access to Mancala Solver. An admin will review your request.</p>
+      ${opts.error ? `<div class="error">${escapeHtml(opts.error)}</div>` : ""}
+      ${
+        opts.alreadyApproved
+          ? `<p>That email already has access. <a href="/login">Sign in instead</a>.</p>`
+          : opts.sent
+            ? `<p>Thanks! Your request has been submitted. You'll be able to sign in once an admin approves it.</p>`
+            : `<form method="POST" action="/register">
+                <input type="email" name="email" placeholder="you@example.com" required autofocus />
+                <button type="submit">Request access</button>
+              </form>`
+      }
+      <p style="text-align:center; font-size:13px;">Already approved? <a href="/login">Sign in</a></p>
+    </div></div>
+  `;
+  return shell("Request access — Mancala Solver", body);
 }
 
 export function confirmSignInPage(opts: { token: string }): string {
@@ -105,10 +128,30 @@ export function errorPage(message: string): string {
 
 export function adminPage(opts: {
   adminEmail: string;
+  requests: { email: string; requested_at: string }[];
   approved: { email: string; approved_at: string; approved_by: string; is_admin: boolean }[];
   users: { email: string; created_at: string; last_login_at: string | null }[];
   message?: string;
 }): string {
+  const requestRows = opts.requests
+    .map(
+      (r) => `<div class="list-row">
+        <div class="list-cell list-email">${escapeHtml(r.email)}</div>
+        <div class="list-cell list-meta">requested ${new Date(r.requested_at).toLocaleString()}</div>
+        <div class="row-actions">
+          <form method="POST" action="/admin/requests/approve" style="margin:0;">
+            <input type="hidden" name="email" value="${escapeHtml(r.email)}" />
+            <button type="submit" class="admin-toggle">Approve</button>
+          </form>
+          <form method="POST" action="/admin/requests/dismiss" style="margin:0;">
+            <input type="hidden" name="email" value="${escapeHtml(r.email)}" />
+            <button type="submit" class="revoke">Dismiss</button>
+          </form>
+        </div>
+      </div>`
+    )
+    .join("");
+
   const approvedRows = opts.approved
     .map(
       (a) => `<div class="list-row">
@@ -144,6 +187,11 @@ export function adminPage(opts: {
       <h1>Admin — Mancala Solver</h1>
       <p>Signed in as ${escapeHtml(opts.adminEmail)}. <a href="/">Back to app</a> · <form method="POST" action="/auth/logout" style="display:inline;"><button type="submit" style="width:auto; background:none; color:#d4af37; text-decoration:underline; padding:0;">Sign out</button></form></p>
       ${opts.message ? `<div style="color:#4ade80; font-size:13px; margin-bottom:12px;">${escapeHtml(opts.message)}</div>` : ""}
+
+      <h2 style="color:#e0e0e0; font-size:15px; margin-top:24px;">Pending requests (${opts.requests.length})</h2>
+      <div class="list">
+        ${requestRows || `<div class="list-empty">None yet</div>`}
+      </div>
 
       <h2 style="color:#e0e0e0; font-size:15px; margin-top:24px;">Approve emails</h2>
       <form method="POST" action="/admin/approve">

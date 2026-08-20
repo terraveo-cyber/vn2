@@ -97,6 +97,23 @@ export async function setApprovedEmailAdmin(email: string, isAdmin: boolean): Pr
   await pool.query(`UPDATE approved_emails SET is_admin = $2 WHERE email = $1`, [email, isAdmin]);
 }
 
+// --- Self-service access requests -------------------------------------------
+// A pending request is just a "please review me" marker - it grants no
+// access on its own. The admin approves (via approveEmail) or dismisses it
+// from /admin.
+
+export async function requestAccess(email: string): Promise<void> {
+  await pool.query(
+    `INSERT INTO access_requests (email) VALUES ($1)
+     ON CONFLICT (email) DO UPDATE SET requested_at = now()`,
+    [email]
+  );
+}
+
+export async function dismissAccessRequest(email: string): Promise<void> {
+  await pool.query(`DELETE FROM access_requests WHERE email = $1`, [email]);
+}
+
 // True for the env-configured bootstrap admin OR anyone granted admin via
 // the approved_emails table (checked separately by the caller, which
 // already knows the bootstrap admin's email from ADMIN_EMAIL).

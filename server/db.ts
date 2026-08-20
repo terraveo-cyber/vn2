@@ -51,5 +51,10 @@ export async function initSchema(): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       expires_at TIMESTAMPTZ NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS access_requests (
+      email TEXT PRIMARY KEY,
+      requested_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
   `);
 }
