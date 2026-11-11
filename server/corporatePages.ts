@@ -87,7 +87,7 @@ export function corporateHomePage(): string {
           <li>Verba Nova&trade;</li>
           <li>Ambiens Atrium&trade;</li>
           <li>Prosa Prisma&trade;</li>
-          <li>Lumen Lite&trade;</li>
+          <li>LumenLite&trade;</li>
           <li>Polar Ursa AAC Assistant&trade;</li>
           <li>Lumina deLux Worx Engineering Markup Program&trade;</li>
         </ul>
