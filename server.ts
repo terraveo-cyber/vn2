@@ -28,11 +28,17 @@ import {
 import { sendLoginLinkEmail } from "./server/email";
 import { getDuoClient } from "./server/duoClient";
 import { adminPage, confirmSignInPage, errorPage, loginPage, registerPage } from "./server/pages";
+import { corporateHomePage, corporatePrivacyPage, corporateSupportPage } from "./server/corporatePages";
 import { pool } from "./server/db";
 
 const SESSION_COOKIE = "session";
 const PENDING_DUO_COOKIE = "duo_pending";
 const isProd = process.env.NODE_ENV === "production";
+
+// iaewerx.com is a separate corporate site served out of this same repo/
+// deployment. It shares no code path with the Mancala Solver below - no
+// cookies, no auth, no database - so nothing here can affect verbanovae.com.
+const CORPORATE_HOSTS = new Set(["iaewerx.com", "www.iaewerx.com"]);
 
 function appBaseUrl(): string {
   const url = process.env.APP_BASE_URL;
@@ -61,6 +67,33 @@ declare module "express-serve-static-core" {
 async function startServer() {
   const app = express();
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+
+  // Host-based split: iaewerx.com / www.iaewerx.com get the corporate site
+  // and nothing else from this app - no PWA assets, no auth routes, no
+  // Mancala Solver. This runs before anything else so none of the code
+  // below ever executes for those hosts. Every other host (verbanovae.com,
+  // the Render-assigned *.onrender.com host, localhost during development)
+  // falls through unchanged.
+  app.use((req, res, next) => {
+    const host = (req.hostname || "").toLowerCase();
+    if (!CORPORATE_HOSTS.has(host)) {
+      next();
+      return;
+    }
+    if (req.method !== "GET") {
+      res.status(404).type("html").send("Not found");
+      return;
+    }
+    if (req.path === "/") {
+      res.type("html").send(corporateHomePage());
+    } else if (req.path === "/privacy") {
+      res.type("html").send(corporatePrivacyPage());
+    } else if (req.path === "/support") {
+      res.type("html").send(corporateSupportPage());
+    } else {
+      res.status(404).type("html").send("Not found");
+    }
+  });
 
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
